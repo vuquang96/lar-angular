@@ -7,12 +7,15 @@ use Illuminate\Http\Request;
 use AppHttpRequests;
 use AppHttpControllersController;
 use JWTAuth;
+use App\User;
 use Tymon\JWTAuthExceptions\JWTException;
 
 class AuthenticateController extends Controller
 {
-	public function __construct(){
-		$this->middleware('jwt.auth', ['except' => ['authenticate']]);
+    private $user;
+	public function __construct(User $user){
+		//$this->middleware('jwt.auth', ['except' => ['authenticate']]);
+        $this->user = $user;
 	}
     public function index()
     {
@@ -23,11 +26,9 @@ class AuthenticateController extends Controller
 
     public function authenticate(Request $request)
     {
-    	/*$temp = $request->all();
-    		echo "<pre>";
-    		print_r($temp);
-    		echo "<pre>";
-*/        $credentials = $request->only('email', 'password');
+    	$credentials = $request->all();
+
+        //$credentials = $request->only('email', 'password');
 
         try {
             // verify the credentials and create a token for the user
@@ -61,5 +62,71 @@ class AuthenticateController extends Controller
     public function getJWTCustomClaims()
     {
         return [];
+    }
+
+    public function register(Request $request){
+        $user = $this->user->create([
+          'name' => $request->get('name'),
+          'email' => $request->get('email'),
+          'password' => bcrypt($request->get('password'))
+        ]);
+        return response()->json(['status'=>true,'message'=>'User created successfully','data'=>$user]);
+    }
+    
+    public function login(Request $request){
+        $credentials = $request->only('email', 'password');
+        $token = null;
+        try {
+           if (!$token = JWTAuth::attempt($credentials)) {
+            return response()->json(['invalid_email_or_password'], 422);
+           }
+        } catch (JWTAuthException $e) {
+            return response()->json(['failed_to_create_token'], 500);
+        }
+        return response()->json(compact('token'));
+    }
+    public function getAuthUser(Request $request){
+        $user = JWTAuth::toUser($request->token);
+        return response()->json(['result' => $user]);
+    }
+
+    public function get_grid(Request $request){
+        $user = JWTAuth::toUser($request->token);
+        $users = User::where( 'level','>=', $user->level )->get();
+        return response()->json(['result' => $users]);
+    }
+
+    public function get_detail(Request $request){
+        $id = $request->id;
+        $user = User::where( 'id', $id )->first();
+        return response()->json(['result' => $user]);
+    }
+    public function update(Request $request){
+        $userCurrent = JWTAuth::toUser($request->token);
+        $id = $request->id;
+        $user = User::where( 'id', $id )->first();
+        if($userCurrent->level >= $user->level){
+            return response()->json(['result' => "false"]);
+        }
+
+        $user->name = $request->name;
+        $user->level = $request->level;
+        if($request->password){
+            $user->password = Hash::make($request->password);
+        }
+        $user->save();
+        return response()->json(['result' => "true"]);
+    }
+
+    public function delete(Request $request){
+        $userCurrent = JWTAuth::toUser($request->token);
+        $id = $request->id;
+        $user = User::where( 'id', $id )->first();
+        if($userCurrent->level >= $user->level){
+            return response()->json(['result' => "false"]);
+        }
+
+        $user->delete();
+        return response()->json(['result' => "true"]);
     }
 }
